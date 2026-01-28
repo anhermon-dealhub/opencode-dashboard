@@ -11,6 +11,14 @@
     "bun",
     "hono"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anhermon-dealhub/opencode-dashboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anhermon-dealhub/opencode-dashboard/issues"
+  },
+  "homepage": "https://github.com/anhermon-dealhub/opencode-dashboard#readme",
   "scripts": {
     "dev": "bun --watch server.js",
     "start": "bun server.js",
