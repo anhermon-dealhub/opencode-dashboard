@@ -33,7 +33,38 @@ tasks:
   dev:
     desc: Run the server (watch)
     cmds:
-      - bun --watch {{.ENTRY}}
+      - |
+        # Kill existing server if running
+        pkill -f "bun --watch {{.ENTRY}}" || true
+        pkill -f "bun {{.ENTRY}}" || true
+        # Wait a moment for ports to free up
+        sleep 1
+        # Start server in background
+        bun --watch {{.ENTRY}} &
+        SERVER_PID=$!
+        # Wait for server to start (check port 3838)
+        echo "Starting server..."
+        for i in {1..30}; do
+          if curl -s http://localhost:3838 > /dev/null 2>&1; then
+            echo "Server started successfully!"
+            # Open browser
+            if command -v open > /dev/null 2>&1; then
+              open http://localhost:3838
+            elif command -v xdg-open > /dev/null 2>&1; then
+              xdg-open http://localhost:3838
+            elif command -v start > /dev/null 2>&1; then
+              start http://localhost:3838
+            fi
+            # Keep server running
+            wait $SERVER_PID
+            break
+          fi
+          sleep 0.5
+        done
+        if ! curl -s http://localhost:3838 > /dev/null 2>&1; then
+          echo "Failed to start server"
+          exit 1
+        fi
 
   dev:env:
     desc: Run the server (watch) with local .env
