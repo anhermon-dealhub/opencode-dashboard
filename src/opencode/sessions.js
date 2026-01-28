@@ -1,9 +1,9 @@
 import { readdir, readFile } from 'fs/promises'
 import { basename, join } from 'path'
-import { enrichSessionAgent, createCache } from './enrichment.js'
+import { enrichSessionAgent, enrichSessionTitle, createCache } from './enrichment.js'
 
-// Module-level cache for agent detection
-const agentCache = createCache()
+// Module-level cache for enrichment
+const enrichmentCache = createCache()
 
 function determineStatus(ageMinutes, thresholds) {
   if (ageMinutes < thresholds.busyMinutes) return 'busy'
@@ -86,12 +86,19 @@ export async function discoverSessions(storageRoot, thresholds) {
           parentID: session.parentID || null,
           version: session.version,
           summary: session.summary || { additions: 0, deletions: 0, files: 0 },
+          time: session.time,
         }
 
-        // Enrich with actual agent from message metadata if not already a subagent
-        const enrichedSession = isSubagent 
-          ? baseSession 
-          : await enrichSessionAgent(baseSession, storageRoot, agentCache)
+        // Enrich with both agent detection and semantic title
+        let enrichedSession = baseSession
+        
+        // Only detect agent for non-subagent sessions
+        if (!isSubagent) {
+          enrichedSession = await enrichSessionAgent(enrichedSession, storageRoot, enrichmentCache)
+        }
+        
+        // Enrich with semantic title for all sessions
+        enrichedSession = await enrichSessionTitle(enrichedSession, storageRoot, enrichmentCache)
 
         sessions.push(enrichedSession)
       } catch {

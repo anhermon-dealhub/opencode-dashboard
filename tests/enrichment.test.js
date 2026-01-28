@@ -1,5 +1,11 @@
 import { describe, test, expect, beforeEach } from 'bun:test'
-import { detectAgent, createCache, enrichSessionAgent } from '../src/opencode/enrichment.js'
+import {
+  detectAgent,
+  createCache,
+  enrichSessionAgent,
+  extractSemanticTitle,
+  enrichSessionTitle,
+} from '../src/opencode/enrichment.js'
 import { mkdir, writeFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -168,64 +174,52 @@ describe('enrichment module', () => {
   describe('createCache', () => {
     test('should store and retrieve values', () => {
       const cache = createCache()
-      
       cache.set('key1', 'value1')
       expect(cache.get('key1')).toBe('value1')
     })
 
     test('should return undefined for non-existent keys', () => {
       const cache = createCache()
-      
       expect(cache.get('nonexistent')).toBeUndefined()
     })
 
-    test('should expire entries after TTL', async () => {
-      const cache = createCache()
-      
+    test('should respect TTL and expire old entries', async () => {
+      const cache = createCache(100) // 100ms TTL
       cache.set('key1', 'value1')
       expect(cache.get('key1')).toBe('value1')
-      
-      // Mock time passage by manipulating the cache entry
-      // (In real implementation, we'd wait 5+ minutes)
-      const entry = cache.get('key1')
-      
-      // For this test, we'll just verify the cache works immediately
-      expect(cache.get('key1')).toBe('value1')
+
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      expect(cache.get('key1')).toBeUndefined()
     })
 
-    test('should limit cache size to 1000 entries', () => {
-      const cache = createCache()
-      
-      // Add 1001 entries
-      for (let i = 0; i < 1001; i++) {
-        cache.set(`key${i}`, `value${i}`)
-      }
-      
-      // Cache should have at most 1000 entries
-      expect(cache.size()).toBeLessThanOrEqual(1000)
-      
-      // First entry should be evicted
-      expect(cache.get('key0')).toBeUndefined()
-      
-      // Last entry should still exist
-      expect(cache.get('key1000')).toBe('value1000')
+    test('should enforce max size with LRU eviction', () => {
+      const cache = createCache(60000, 3) // 3 item limit
+
+      cache.set('key1', 'value1')
+      cache.set('key2', 'value2')
+      cache.set('key3', 'value3')
+
+      expect(cache.size()).toBe(3)
+
+      // Adding 4th item should evict oldest (key1)
+      cache.set('key4', 'value4')
+
+      expect(cache.size()).toBe(3)
+      expect(cache.get('key1')).toBeUndefined()
+      expect(cache.get('key2')).toBe('value2')
+      expect(cache.get('key3')).toBe('value3')
+      expect(cache.get('key4')).toBe('value4')
     })
 
     test('should clear all entries', () => {
       const cache = createCache()
-      
       cache.set('key1', 'value1')
       cache.set('key2', 'value2')
-      cache.set('key3', 'value3')
-      
-      expect(cache.size()).toBe(3)
-      
+
+      expect(cache.size()).toBe(2)
       cache.clear()
-      
       expect(cache.size()).toBe(0)
       expect(cache.get('key1')).toBeUndefined()
-      expect(cache.get('key2')).toBeUndefined()
-      expect(cache.get('key3')).toBeUndefined()
     })
 
     test('should handle overwrites correctly', () => {
@@ -405,9 +399,432 @@ describe('enrichment module', () => {
       await cleanupTestStorage(testDir)
     })
   })
+
+  describe('extractSemanticTitle', () => {
+    test('should extract first sentence from user message', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_123'
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: 'Implement remote Allure URL extraction. This is a feature request.',
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBe('Implement remote Allure URL extraction.')
+
+      await cleanup(testDir)
+    })
+
+    test('should truncate long text without sentence ending', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_456'
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+
+      const longText =
+        'This is a very long message that does not have any sentence endings and should be truncated at word boundaries'
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: longText,
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toContain('This is a very long message')
+      expect(title?.length).toBeLessThanOrEqual(63) // 60 + '...'
+
+      await cleanup(testDir)
+    })
+
+    test('should handle text shorter than max length', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_789'
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: 'Short task',
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBe('Short task')
+
+      await cleanup(testDir)
+    })
+
+    test('should skip assistant messages and find first user message', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_multi'
+
+      // Create assistant message first (older timestamp)
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'assistant',
+        time: { created: 1000 },
+      })
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: 'Assistant response',
+      })
+
+      // Create user message second (newer timestamp)
+      await createMessage(testDir, sessionID, 'msg_2', {
+        id: 'msg_2',
+        role: 'user',
+        time: { created: 2000 },
+      })
+      await createPart(testDir, 'msg_2', 'prt_2', {
+        type: 'text',
+        text: 'User question here.',
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBe('User question here.')
+
+      await cleanup(testDir)
+    })
+
+    test('should handle multiple parts and find text part', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_parts'
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+
+      // Create non-text part
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'image',
+        data: 'imagedata',
+      })
+
+      // Create text part
+      await createPart(testDir, 'msg_1', 'prt_2', {
+        type: 'text',
+        text: 'Fix the bug in authentication.',
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBe('Fix the bug in authentication.')
+
+      await cleanup(testDir)
+    })
+
+    test('should clean up whitespace and newlines', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_whitespace'
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: '  \n\n  Add   feature  \n  with   tests  \n\n  ',
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBe('Add feature with tests')
+
+      await cleanup(testDir)
+    })
+
+    test('should return null when session has no messages', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_nomessages'
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBeNull()
+
+      await cleanup(testDir)
+    })
+
+    test('should return null when message has no parts', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_noparts'
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBeNull()
+
+      await cleanup(testDir)
+    })
+
+    test('should return null when no user messages exist', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_nouser'
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'assistant',
+        time: { created: 1000 },
+      })
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: 'Assistant only',
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBeNull()
+
+      await cleanup(testDir)
+    })
+
+    test('should handle invalid JSON gracefully', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_invalid'
+
+      const messagePath = join(testDir, 'message', sessionID)
+      await mkdir(messagePath, { recursive: true })
+      await writeFile(join(messagePath, 'msg_1.json'), 'invalid json{')
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBeNull()
+
+      await cleanup(testDir)
+    })
+
+    test('should handle missing directories gracefully', async () => {
+      const testDir = await createTestEnv()
+      const title = await extractSemanticTitle('nonexistent', testDir)
+      expect(title).toBeNull()
+
+      await cleanup(testDir)
+    })
+
+    test('should handle empty text gracefully', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_empty'
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: '   \n\n   ',
+      })
+
+      const title = await extractSemanticTitle(sessionID, testDir)
+      expect(title).toBeNull()
+
+      await cleanup(testDir)
+    })
+  })
+
+  describe('enrichSessionTitle', () => {
+    test('should enrich session with generic timestamp title', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_generic'
+      const cache = createCache()
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: 'Build new dashboard feature.',
+      })
+
+      const session = {
+        id: sessionID,
+        title: 'New session - 2026-01-28T10:16:06.133Z',
+        time: { updated: 123456 },
+      }
+
+      const enriched = await enrichSessionTitle(session, testDir, cache)
+      expect(enriched.title).toBe('Build new dashboard feature.')
+      expect(enriched.id).toBe(sessionID)
+
+      await cleanup(testDir)
+    })
+
+    test('should not enrich session with semantic title', async () => {
+      const testDir = await createTestEnv()
+      const cache = createCache()
+
+      const session = {
+        id: 'ses_semantic',
+        title: 'Implement user authentication',
+        time: { updated: 123456 },
+      }
+
+      const enriched = await enrichSessionTitle(session, testDir, cache)
+      expect(enriched.title).toBe('Implement user authentication')
+
+      await cleanup(testDir)
+    })
+
+    test('should use cache for repeated enrichment', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_cache'
+      const cache = createCache()
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: 'Cached title extraction.',
+      })
+
+      const session = {
+        id: sessionID,
+        title: 'New session - 2026-01-28T10:16:06.133Z',
+        time: { updated: 123456 },
+      }
+
+      // First call - should extract
+      const enriched1 = await enrichSessionTitle(session, testDir, cache)
+      expect(enriched1.title).toBe('Cached title extraction.')
+      expect(cache.size()).toBe(1)
+
+      // Second call - should use cache
+      const enriched2 = await enrichSessionTitle(session, testDir, cache)
+      expect(enriched2.title).toBe('Cached title extraction.')
+      expect(cache.size()).toBe(1)
+
+      await cleanup(testDir)
+    })
+
+    test('should fallback to original title when extraction fails', async () => {
+      const testDir = await createTestEnv()
+      const cache = createCache()
+
+      const session = {
+        id: 'ses_nodata',
+        title: 'New session - 2026-01-28T10:16:06.133Z',
+        time: { updated: 123456 },
+      }
+
+      const enriched = await enrichSessionTitle(session, testDir, cache)
+      expect(enriched.title).toBe('New session - 2026-01-28T10:16:06.133Z')
+
+      await cleanup(testDir)
+    })
+
+    test('should handle session with empty title', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_empty_title'
+      const cache = createCache()
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: 'Extracted title.',
+      })
+
+      const session = {
+        id: sessionID,
+        title: '',
+        time: { updated: 123456 },
+      }
+
+      const enriched = await enrichSessionTitle(session, testDir, cache)
+      expect(enriched.title).toBe('Extracted title.')
+
+      await cleanup(testDir)
+    })
+
+    test('should preserve all session properties', async () => {
+      const testDir = await createTestEnv()
+      const cache = createCache()
+
+      const session = {
+        id: 'ses_preserve',
+        slug: 'test-slug',
+        title: 'Implement feature',
+        description: 'Task description',
+        directory: '/test/dir',
+        projectName: 'test-project',
+        updated: 123456,
+        ageMinutes: 10,
+        status: 'busy',
+        phase: 'implementing',
+        agent: 'general',
+        isSubagent: false,
+        parentID: null,
+        version: '1.0.0',
+        summary: { additions: 10, deletions: 5, files: 2 },
+        time: { updated: 123456 },
+      }
+
+      const enriched = await enrichSessionTitle(session, testDir, cache)
+      expect(enriched).toMatchObject({
+        id: 'ses_preserve',
+        slug: 'test-slug',
+        description: 'Task description',
+        directory: '/test/dir',
+        projectName: 'test-project',
+      })
+
+      await cleanup(testDir)
+    })
+
+    test('should handle date-like titles', async () => {
+      const testDir = await createTestEnv()
+      const sessionID = 'ses_date'
+      const cache = createCache()
+
+      await createMessage(testDir, sessionID, 'msg_1', {
+        id: 'msg_1',
+        role: 'user',
+        time: { created: 1000 },
+      })
+      await createPart(testDir, 'msg_1', 'prt_1', {
+        type: 'text',
+        text: 'Date title test.',
+      })
+
+      const session = {
+        id: sessionID,
+        title: '2026-01-28 work session',
+        time: { updated: 123456 },
+      }
+
+      const enriched = await enrichSessionTitle(session, testDir, cache)
+      expect(enriched.title).toBe('Date title test.')
+
+      await cleanup(testDir)
+    })
+  })
 })
 
-// Helper functions
+// Helper functions for agent detection tests
 async function createTestStorage() {
   const testDir = join(tmpdir(), 'opencode-enrichment-test-' + Date.now())
   await mkdir(testDir, { recursive: true })
@@ -425,6 +842,33 @@ async function cleanupTestStorage(testDir) {
   try {
     await rm(testDir, { recursive: true, force: true })
   } catch (error) {
+    // Ignore cleanup errors
+  }
+}
+
+// Helper functions for semantic title tests
+async function createTestEnv() {
+  const testDir = join(tmpdir(), 'opencode-enrich-test-' + Date.now())
+  await mkdir(testDir, { recursive: true })
+  return testDir
+}
+
+async function createMessage(testDir, sessionID, messageID, data) {
+  const messagePath = join(testDir, 'message', sessionID)
+  await mkdir(messagePath, { recursive: true })
+  await writeFile(join(messagePath, `${messageID}.json`), JSON.stringify(data))
+}
+
+async function createPart(testDir, messageID, partID, data) {
+  const partPath = join(testDir, 'part', messageID)
+  await mkdir(partPath, { recursive: true })
+  await writeFile(join(partPath, `${partID}.json`), JSON.stringify(data))
+}
+
+async function cleanup(testDir) {
+  try {
+    await rm(testDir, { recursive: true, force: true })
+  } catch {
     // Ignore cleanup errors
   }
 }
