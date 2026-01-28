@@ -25,13 +25,17 @@ export function renderDashboardPage(opts) {
     .stat { background: #1e293b; padding: 12px 20px; border-radius: 8px; font-size: 14px; }
     .stat-value { font-size: 24px; font-weight: bold; margin-right: 8px; }
     .sessions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 20px; }
+    .session-group { display: flex; flex-direction: column; gap: 12px; }
     .session-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 2px solid transparent; transition: all 0.2s; min-height: 280px; display: flex; flex-direction: column; position: relative; }
-    .session-card:hover { border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 10px 25px rgba(59, 130, 246, 0.1); cursor: pointer; }
+    .session-card:hover { border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 10px 25px rgba(59, 130, 246, 0.1); }
     .session-card.busy { border-left: 4px solid #3b82f6; }
     .session-card.idle { border-left: 4px solid #10b981; }
     .session-card.stale { border-left: 4px solid #6b7280; opacity: 0.7; }
-    .session-card.subagent-nested { margin-left: 40px; margin-top: -10px; border-left: 3px solid #3730a3; opacity: 0.9; min-height: 200px; }
-    .session-card.subagent-nested::before { content: '↳'; position: absolute; left: -30px; color: #64748b; font-size: 20px; top: 20px; }
+    .subagents-container { display: flex; flex-direction: column; gap: 12px; padding-left: 30px; border-left: 3px solid #3730a3; margin-left: 10px; transition: all 0.3s ease; }
+    .subagents-container.collapsed { display: none; }
+    .session-card.subagent { min-height: 200px; opacity: 0.9; cursor: default; position: relative; }
+    .session-card.subagent::before { content: '↳'; position: absolute; left: -25px; color: #64748b; font-size: 18px; top: 20px; }
+    .session-card.subagent:hover { border-color: transparent; transform: none; box-shadow: none; cursor: default; }
     .session-description { font-size: 13px; color: #cbd5e1; margin-bottom: 14px; line-height: 1.6; max-height: 7.2em; overflow: hidden; }
     .session-current-task { font-size: 13px; color: #60a5fa; margin-bottom: 14px; padding: 8px 12px; background: rgba(59, 130, 246, 0.1); border-radius: 6px; border-left: 3px solid #3b82f6; display: flex; align-items: center; gap: 8px; }
     .session-current-task::before { content: '⚡'; font-size: 14px; }
@@ -43,10 +47,17 @@ export function renderDashboardPage(opts) {
     .badge.phase-done { background: #374151; color: #9ca3af; }
     .badge.agent { background: #581c87; color: #e9d5ff; }
     .badge.subagent { background: #3730a3; color: #c7d2fe; font-size: 10px; }
+    .badge.collapsible { cursor: pointer; user-select: none; transition: all 0.2s; padding: 5px 12px; font-size: 11px; font-weight: 700; border: 1px solid rgba(255, 255, 255, 0.2); }
+    .badge.collapsible:hover { background: #4338ca; border-color: rgba(255, 255, 255, 0.4); box-shadow: 0 0 8px rgba(67, 56, 202, 0.4); }
+    .badge.collapsible .toggle-icon { display: inline-block; transition: transform 0.2s; font-size: 12px; font-weight: bold; margin-right: 4px; }
+    .badge.collapsible.expanded .toggle-icon { transform: rotate(90deg); }
     .session-stats { display: flex; gap: 12px; font-size: 12px; color: #94a3b8; padding-top: 12px; border-top: 1px solid #334155; }
     .stat-item { display: flex; align-items: center; gap: 4px; }
-    .session-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
+    .session-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .session-name { font-size: 18px; font-weight: 700; color: #f1f5f9; line-height: 1.3; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .open-session-btn { background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; border-radius: 6px; padding: 6px 10px; font-size: 16px; cursor: pointer; transition: all 0.2s; line-height: 1; }
+    .open-session-btn:hover { background: rgba(59, 130, 246, 0.3); border-color: #3b82f6; color: #93c5fd; transform: translateY(-1px); }
     .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
     .status-badge.busy { background: #1e40af; color: #93c5fd; }
     .status-badge.idle { background: #065f46; color: #6ee7b7; }
@@ -117,12 +128,60 @@ export function renderDashboardPage(opts) {
     };
     
     let allSessions = [];
+    let collapsedSessions = new Set(); // Track collapsed parent sessions
 
     function formatTime(minutes) {
       if (minutes < 1) return 'Just now';
       if (minutes < 60) return minutes + 'm ago';
       const hours = Math.floor(minutes / 60);
       return hours + 'h ago';
+    }
+    
+    // Load collapsed state from localStorage
+    function loadCollapsedState() {
+      const saved = localStorage.getItem('opencode-collapsed-sessions');
+      if (saved) {
+        try {
+          collapsedSessions = new Set(JSON.parse(saved));
+        } catch (e) {
+          // Ignore invalid JSON
+        }
+      }
+      // Default: all sessions start collapsed
+      if (saved === null && allSessions.length > 0) {
+        allSessions.filter(s => !s.isSubagent).forEach(parent => {
+          collapsedSessions.add(parent.id);
+        });
+      }
+    }
+    
+    // Save collapsed state
+    function saveCollapsedState() {
+      localStorage.setItem('opencode-collapsed-sessions', JSON.stringify([...collapsedSessions]));
+    }
+    
+    // Toggle subagents visibility
+    function toggleSubagents(parentId) {
+      const container = document.querySelector(\`.subagents-container[data-parent="\${parentId}"]\`);
+      const badge = document.querySelector(\`.badge.collapsible[data-parent="\${parentId}"]\`);
+      
+      if (!container || !badge) return;
+      
+      const isCollapsed = collapsedSessions.has(parentId);
+      
+      if (isCollapsed) {
+        // Expand
+        container.classList.remove('collapsed');
+        badge.classList.add('expanded');
+        collapsedSessions.delete(parentId);
+      } else {
+        // Collapse
+        container.classList.add('collapsed');
+        badge.classList.remove('expanded');
+        collapsedSessions.add(parentId);
+      }
+      
+      saveCollapsedState();
     }
     
     function groupSessionsByHierarchy(sessions) {
@@ -139,12 +198,28 @@ export function renderDashboardPage(opts) {
     }
     
     function applyFilters(sessions) {
-      return sessions.filter(s => {
-        if (activeFilters.project !== 'all' && s.projectName !== activeFilters.project) return false
-        if (activeFilters.status !== 'all' && s.status !== activeFilters.status) return false
-        if (activeFilters.phase !== 'all' && s.phase !== activeFilters.phase) return false
-        return true
-      })
+      // Filter all sessions
+      const filteredSessions = sessions.filter(s => {
+        if (activeFilters.project !== 'all' && s.projectName !== activeFilters.project) return false;
+        if (activeFilters.status !== 'all' && s.status !== activeFilters.status) return false;
+        if (activeFilters.phase !== 'all' && s.phase !== activeFilters.phase) return false;
+        return true;
+      });
+      
+      // Always include parent sessions if any of their children match
+      const parents = sessions.filter(s => !s.isSubagent);
+      const matchedParentIds = new Set(filteredSessions.filter(s => !s.isSubagent).map(s => s.id));
+      
+      // Add parents of matched subagents
+      filteredSessions.filter(s => s.isSubagent).forEach(child => {
+        if (child.parentID) matchedParentIds.add(child.parentID);
+      });
+      
+      // Include all relevant parents
+      const result = parents.filter(p => matchedParentIds.has(p.id));
+      const children = filteredSessions.filter(s => s.isSubagent);
+      
+      return [...result, ...children];
     }
     
     function updateProjectFilters(sessions) {
@@ -221,62 +296,81 @@ export function renderDashboardPage(opts) {
       // Group by hierarchy
       const grouped = groupSessionsByHierarchy(filtered)
 
-      const html = '<div class="sessions-grid">' + grouped.map(group => \`
-        <!-- Parent session -->
-        <div class="session-card \${group.session.status}" onclick="openSession('\${group.session.id}')">
-          <div class="session-header">
-            <div class="session-name">\${group.session.title || group.session.slug}</div>
-            <div class="status-badge \${group.session.status}">\${group.session.status}</div>
-          </div>
-
-          \${group.session.description ? \`<div class="session-description">\${group.session.description}</div>\` : ''}
-          
-          \${group.session.currentTask ? \`<div class="session-current-task">\${group.session.currentTask}</div>\` : ''}
-
-          <div class="session-badges">
-            <div class="badge phase-\${group.session.phase}">\${group.session.phase}</div>
-            <div class="badge agent">@\${group.session.agent}</div>
-            \${group.children.length > 0 ? \`<div class="badge subagent">\${group.children.length} subagent\${group.children.length > 1 ? 's' : ''}</div>\` : ''}
-          </div>
-
-          <div class="session-project">Project: \${group.session.projectName}</div>
-          <div class="session-directory">\${group.session.directory || ''}</div>
-
-          <div class="session-stats">
-            <div class="stat-item">Updated: \${formatTime(group.session.ageMinutes)}</div>
-            \${group.session.summary ? \`<div class="stat-item">Files: \${group.session.summary.files}</div>\` : ''}
-            \${group.session.summary ? \`<div class="stat-item">+\${group.session.summary.additions}</div>\` : ''}
-            \${group.session.summary ? \`<div class="stat-item">-\${group.session.summary.deletions}</div>\` : ''}
-          </div>
-        </div>
-        
-        <!-- Subagent sessions (nested) -->
-        \${group.children.map(child => \`
-          <div class="session-card subagent-nested \${child.status}" onclick="openSession('\${child.id}')">
+      const html = '<div class="sessions-grid">' + grouped.map(group => {
+        const isCollapsed = collapsedSessions.has(group.session.id);
+        return \`
+        <div class="session-group">
+          <!-- Parent session -->
+          <div class="session-card \${group.session.status}">
             <div class="session-header">
-              <div class="session-name">\${child.title || child.slug}</div>
-              <div class="status-badge \${child.status}">\${child.status}</div>
+              <div class="session-name">\${group.session.title || group.session.slug}</div>
+              <div class="header-actions">
+                <button class="open-session-btn" onclick="event.stopPropagation(); openSession('\${group.session.id}')" title="Open in OpenCode Web">↗</button>
+                <div class="status-badge \${group.session.status}">\${group.session.status}</div>
+              </div>
             </div>
 
-            \${child.description ? \`<div class="session-description">\${child.description}</div>\` : ''}
+            \${group.session.description ? \`<div class="session-description">\${group.session.description}</div>\` : ''}
             
-            \${child.currentTask ? \`<div class="session-current-task">\${child.currentTask}</div>\` : ''}
+            \${group.session.currentTask ? \`<div class="session-current-task">\${group.session.currentTask}</div>\` : ''}
 
             <div class="session-badges">
-              <div class="badge phase-\${child.phase}">\${child.phase}</div>
-              <div class="badge agent">@\${child.agent}</div>
-              <div class="badge subagent">subagent</div>
+              <div class="badge phase-\${group.session.phase}">\${group.session.phase}</div>
+              <div class="badge agent">@\${group.session.agent}</div>
+              \${group.children.length > 0 ? 
+                \`<div class="badge subagent collapsible \${!isCollapsed ? 'expanded' : ''}" 
+                     data-parent="\${group.session.id}" 
+                     onclick="event.stopPropagation(); toggleSubagents('\${group.session.id}')" 
+                     title="Click to \${isCollapsed ? 'expand' : 'collapse'} subagents">
+                    <span class="toggle-icon">▶</span> \${group.children.length} subagent\${group.children.length > 1 ? 's' : ''}
+                  </div>\` 
+                : ''}
             </div>
 
+            <div class="session-project">Project: \${group.session.projectName}</div>
+            <div class="session-directory">\${group.session.directory || ''}</div>
+
             <div class="session-stats">
-              <div class="stat-item">Updated: \${formatTime(child.ageMinutes)}</div>
-              \${child.summary ? \`<div class="stat-item">Files: \${child.summary.files}</div>\` : ''}
-              \${child.summary ? \`<div class="stat-item">+\${child.summary.additions}</div>\` : ''}
-              \${child.summary ? \`<div class="stat-item">-\${child.summary.deletions}</div>\` : ''}
+              <div class="stat-item">Updated: \${formatTime(group.session.ageMinutes)}</div>
+              \${group.session.summary ? \`<div class="stat-item">Files: \${group.session.summary.files}</div>\` : ''}
+              \${group.session.summary ? \`<div class="stat-item">+\${group.session.summary.additions}</div>\` : ''}
+              \${group.session.summary ? \`<div class="stat-item">-\${group.session.summary.deletions}</div>\` : ''}
             </div>
           </div>
-        \`).join('')}
-      \`).join('') + '</div>';
+          
+          <!-- Subagents container -->
+          \${group.children.length > 0 ? \`
+            <div class="subagents-container \${isCollapsed ? 'collapsed' : ''}" data-parent="\${group.session.id}">
+              \${group.children.map(child => \`
+                <div class="session-card subagent \${child.status}">
+                  <div class="session-header">
+                    <div class="session-name">\${child.title || child.slug}</div>
+                    <div class="status-badge \${child.status}">\${child.status}</div>
+                  </div>
+
+                  \${child.description ? \`<div class="session-description">\${child.description}</div>\` : ''}
+                  
+                  \${child.currentTask ? \`<div class="session-current-task">\${child.currentTask}</div>\` : ''}
+
+                  <div class="session-badges">
+                    <div class="badge phase-\${child.phase}">\${child.phase}</div>
+                    <div class="badge agent">@\${child.agent}</div>
+                    <div class="badge subagent">subagent</div>
+                  </div>
+
+                  <div class="session-stats">
+                    <div class="stat-item">Updated: \${formatTime(child.ageMinutes)}</div>
+                    \${child.summary ? \`<div class="stat-item">Files: \${child.summary.files}</div>\` : ''}
+                    \${child.summary ? \`<div class="stat-item">+\${child.summary.additions}</div>\` : ''}
+                    \${child.summary ? \`<div class="stat-item">-\${child.summary.deletions}</div>\` : ''}
+                  </div>
+                </div>
+              \`).join('')}
+            </div>
+          \` : ''}
+        </div>
+        \`;
+      }).join('') + '</div>';
 
       container.innerHTML = html;
       
@@ -313,6 +407,19 @@ export function renderDashboardPage(opts) {
       try {
         const response = await fetch('/api/sessions');
         const sessions = await response.json();
+        
+        // Initialize collapsed state on first load
+        if (allSessions.length === 0 && sessions.length > 0) {
+          const savedState = localStorage.getItem('opencode-collapsed-sessions');
+          if (!savedState) {
+            // Default: collapse all parent sessions
+            sessions.filter(s => !s.isSubagent).forEach(parent => {
+              collapsedSessions.add(parent.id);
+            });
+            saveCollapsedState();
+          }
+        }
+        
         renderSessions(sessions);
       } catch (error) {
         console.error('Error fetching sessions:', error);
@@ -322,8 +429,9 @@ export function renderDashboardPage(opts) {
       setTimeout(() => indicator.classList.remove('active'), 500);
     }
     
-    // Load saved filters and add event listeners for status/phase filters
+    // Load saved filters and collapsed state
     loadFilters();
+    loadCollapsedState();
     
     document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.filter-btn[data-filter="status"], .filter-btn[data-filter="phase"]').forEach(btn => {
