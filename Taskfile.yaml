@@ -1,0 +1,73 @@
+version: "3"
+
+vars:
+  ENTRY: server.js
+  DIST_DIR: dist
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - bun install
+
+  install:ci:
+    desc: Install dependencies (CI / lockfile enforced)
+    cmds:
+      - bun install --frozen-lockfile
+
+  run:
+    desc: Run the server
+    cmds:
+      - bun {{.ENTRY}}
+
+  run:env:
+    desc: Run the server with local .env
+    cmds:
+      - bun --env-file .env {{.ENTRY}}
+
+  dev:
+    desc: Run the server (watch)
+    cmds:
+      - bun --watch {{.ENTRY}}
+
+  dev:env:
+    desc: Run the server (watch) with local .env
+    cmds:
+      - bun --watch --env-file .env {{.ENTRY}}
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf "{{.DIST_DIR}}"
+
+  build:
+    desc: Build bundle into dist/
+    deps: [clean]
+    cmds:
+      - bun build "{{.ENTRY}}" --target=bun --outdir "{{.DIST_DIR}}"
+
+  test:
+    desc: Run tests (passes if no tests exist)
+    cmds:
+      - |
+        set -eu
+        out="$(bun test 2>&1)" || {
+          echo "$out"
+          if echo "$out" | grep -q "0 test files matching"; then
+            echo "No test files found; skipping."
+            exit 0
+          fi
+          exit 1
+        }
+        echo "$out"
+
+  ci:
+    desc: CI / pre-commit checks
+    deps: [install:ci, test, build]
+    cmds:
+      - echo "CI checks passed"

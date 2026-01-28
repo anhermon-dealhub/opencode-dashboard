@@ -1,0 +1,23 @@
+{
+  "name": "opencode-dashboard",
+  "version": "1.0.0",
+  "description": "A lightweight local dashboard for browsing OpenCode sessions",
+  "type": "module",
+  "license": "MIT",
+  "author": "Angel Hermon",
+  "keywords": [
+    "opencode",
+    "dashboard",
+    "bun",
+    "hono"
+  ],
+  "scripts": {
+    "dev": "bun --watch server.js",
+    "start": "bun server.js",
+    "build": "bun build server.js --target=bun --outdir dist",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  }
+}
