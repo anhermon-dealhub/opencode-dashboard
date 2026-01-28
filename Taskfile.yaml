@@ -52,19 +52,14 @@ tasks:
       - bun build "{{.ENTRY}}" --target=bun --outdir "{{.DIST_DIR}}"
 
   test:
-    desc: Run tests (passes if no tests exist)
+    desc: Run tests
     cmds:
-      - |
-        set -eu
-        out="$(bun test 2>&1)" || {
-          echo "$out"
-          if echo "$out" | grep -q "0 test files matching"; then
-            echo "No test files found; skipping."
-            exit 0
-          fi
-          exit 1
-        }
-        echo "$out"
+      - bun test
+
+  test:coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - bun test --coverage
 
   ci:
     desc: CI / pre-commit checks

@@ -1,0 +1,30 @@
+#!/bin/sh
+
+# Pre-commit hook for opencode-dashboard
+# Runs tests before allowing commit
+
+echo "🧪 Running tests before commit..."
+
+# Run tests
+bun test
+
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed! Commit aborted."
+  echo "Fix the failing tests and try again."
+  exit 1
+fi
+
+echo "✅ Tests passed!"
+
+# Optional: Run build to ensure no build errors
+echo "🔨 Building project..."
+bun run build > /dev/null 2>&1
+
+if [ $? -ne 0 ]; then
+  echo "⚠️  Build failed! This may cause issues."
+  echo "Consider fixing build errors before committing."
+  # Don't block commit for build failures, just warn
+fi
+
+echo "✅ Pre-commit checks complete!"
+exit 0

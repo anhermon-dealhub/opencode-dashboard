@@ -23,7 +23,8 @@
     "dev": "bun --watch server.js",
     "start": "bun server.js",
     "build": "bun build server.js --target=bun --outdir dist",
-    "test": "bun test"
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
   },
   "dependencies": {
     "hono": "^4.0.0"
