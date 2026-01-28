@@ -211,7 +211,7 @@ describe('ui module', () => {
       const html = renderDashboardPage({})
       
       expect(html).toContain('.sessions-grid')
-      expect(html).toContain('grid-template-columns: repeat(auto-fill, minmax(350px, 1fr))')
+      expect(html).toContain('grid-template-columns: repeat(auto-fill, minmax(380px, 1fr))')
     })
 
     test('should return a string', () => {

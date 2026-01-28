@@ -1,6 +1,12 @@
 import { readdir, readFile } from 'fs/promises'
 import { basename, join } from 'path'
-import { enrichSessionAgent, enrichSessionTitle, createCache } from './enrichment.js'
+import { 
+  enrichSessionAgent, 
+  enrichSessionTitle, 
+  enrichSessionDescription,
+  enrichSessionCurrentTask,
+  createCache 
+} from './enrichment.js'
 
 // Module-level cache for enrichment
 const enrichmentCache = createCache()
@@ -34,7 +40,7 @@ export async function discoverSessions(storageRoot, thresholds) {
   }
 
   for (const project of projects) {
-    if (!project.isDirectory() || project.name === 'global') continue
+    if (!project.isDirectory()) continue
 
     const projectPath = join(sessionPath, project.name)
     let files
@@ -89,7 +95,7 @@ export async function discoverSessions(storageRoot, thresholds) {
           time: session.time,
         }
 
-        // Enrich with both agent detection and semantic title
+        // Enrich session with multiple data points
         let enrichedSession = baseSession
         
         // Only detect agent for non-subagent sessions
@@ -97,12 +103,18 @@ export async function discoverSessions(storageRoot, thresholds) {
           enrichedSession = await enrichSessionAgent(enrichedSession, storageRoot, enrichmentCache)
         }
         
-        // Enrich with semantic title for all sessions
+        // Enrich with semantic title (concise, goal-oriented)
         enrichedSession = await enrichSessionTitle(enrichedSession, storageRoot, enrichmentCache)
         
-        // Update description with enriched title (unless it's a subagent with cleaned description)
-        if (!isSubagent) {
-          enrichedSession.description = enrichedSession.title
+        // Enrich with detailed description (full context)
+        enrichedSession = await enrichSessionDescription(enrichedSession, storageRoot, enrichmentCache)
+        
+        // Enrich with current task (what agent is doing now)
+        enrichedSession = await enrichSessionCurrentTask(enrichedSession, storageRoot, enrichmentCache)
+        
+        // Update description with enriched content (unless it's a subagent with cleaned description)
+        if (!isSubagent && enrichedSession.detailedDescription) {
+          enrichedSession.description = enrichedSession.detailedDescription
         }
 
         sessions.push(enrichedSession)

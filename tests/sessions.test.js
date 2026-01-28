@@ -424,7 +424,7 @@ describe('sessions module', () => {
       expect(sessions).toEqual([])
     })
 
-    test('should skip global directory', async () => {
+    test('should include global directory sessions', async () => {
       const testDir = await createTestEnvironment()
       const globalDir = join(testDir, 'session', 'global')
       await mkdir(globalDir, { recursive: true })
@@ -432,7 +432,13 @@ describe('sessions module', () => {
       const now = Date.now()
       await writeFile(
         join(globalDir, 'ses_global.json'),
-        JSON.stringify({ id: 'global-session', time: { updated: now } })
+        JSON.stringify({ 
+          id: 'global-session', 
+          slug: 'global-test',
+          title: 'Global Session',
+          directory: '/test/global/path',
+          time: { created: now, updated: now } 
+        })
       )
 
       const sessions = await discoverSessions(testDir, {
@@ -440,7 +446,9 @@ describe('sessions module', () => {
         staleMinutes: 30
       })
 
-      expect(sessions).toEqual([])
+      expect(sessions.length).toBe(1)
+      expect(sessions[0].id).toBe('global-session')
+      expect(sessions[0].projectName).toBe('path')
       
       await cleanupTestEnvironment(testDir)
     })

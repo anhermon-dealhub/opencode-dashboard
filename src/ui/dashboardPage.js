@@ -24,13 +24,15 @@ export function renderDashboardPage(opts) {
     .stats { display: flex; gap: 20px; margin-top: 15px; flex-wrap: wrap; }
     .stat { background: #1e293b; padding: 12px 20px; border-radius: 8px; font-size: 14px; }
     .stat-value { font-size: 24px; font-weight: bold; margin-right: 8px; }
-    .sessions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
-    .session-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 2px solid transparent; transition: all 0.2s; }
+    .sessions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
+    .session-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 2px solid transparent; transition: all 0.2s; min-height: 240px; display: flex; flex-direction: column; }
     .session-card:hover { border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 10px 25px rgba(59, 130, 246, 0.1); cursor: pointer; }
     .session-card.busy { border-left: 4px solid #3b82f6; }
     .session-card.idle { border-left: 4px solid #10b981; }
     .session-card.stale { border-left: 4px solid #6b7280; opacity: 0.7; }
-    .session-description { font-size: 13px; color: #cbd5e1; margin-bottom: 12px; line-height: 1.4; }
+    .session-description { font-size: 13px; color: #cbd5e1; margin-bottom: 14px; line-height: 1.6; max-height: 4.8em; overflow: hidden; }
+    .session-current-task { font-size: 13px; color: #60a5fa; margin-bottom: 14px; padding: 8px 12px; background: rgba(59, 130, 246, 0.1); border-radius: 6px; border-left: 3px solid #3b82f6; display: flex; align-items: center; gap: 8px; }
+    .session-current-task::before { content: '⚡'; font-size: 14px; }
     .session-badges { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
     .badge { padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
     .badge.phase-research { background: #1e3a8a; color: #93c5fd; }
@@ -41,8 +43,8 @@ export function renderDashboardPage(opts) {
     .badge.subagent { background: #3730a3; color: #c7d2fe; font-size: 10px; }
     .session-stats { display: flex; gap: 12px; font-size: 12px; color: #94a3b8; padding-top: 12px; border-top: 1px solid #334155; }
     .stat-item { display: flex; align-items: center; gap: 4px; }
-    .session-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; }
-    .session-name { font-size: 20px; font-weight: 600; color: #f1f5f9; }
+    .session-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
+    .session-name { font-size: 18px; font-weight: 700; color: #f1f5f9; line-height: 1.3; }
     .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
     .status-badge.busy { background: #1e40af; color: #93c5fd; }
     .status-badge.idle { background: #065f46; color: #6ee7b7; }
@@ -104,7 +106,9 @@ export function renderDashboardPage(opts) {
             <div class="status-badge \${session.status}">\${session.status}</div>
           </div>
 
-          <div class="session-description">\${session.description || session.slug}</div>
+          \${session.description ? \`<div class="session-description">\${session.description}</div>\` : ''}
+          
+          \${session.currentTask ? \`<div class="session-current-task">\${session.currentTask}</div>\` : ''}
 
           <div class="session-badges">
             <div class="badge phase-\${session.phase}">\${session.phase}</div>
