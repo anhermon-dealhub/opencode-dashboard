@@ -135,7 +135,7 @@ describe('config module', () => {
     test('should use XDG_DATA_HOME when set', () => {
       process.env.XDG_DATA_HOME = '/custom/xdg/data'
       const config = getConfig()
-      expect(config.opencode.storagePath).toBe('/custom/xdg/data/opencode/storage')
+      expect(config.opencode.storagePath).toBe(join('/custom/xdg/data', 'opencode', 'storage'))
     })
 
     test('should expand tilde in XDG_DATA_HOME', () => {
