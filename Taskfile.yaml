@@ -65,16 +65,6 @@ tasks:
           echo "Failed to start server"
           exit 1
         fi
-            # Keep server running
-            wait $SERVER_PID
-            break
-          fi
-          sleep 0.5
-        done
-        if ! curl -s http://localhost:3838 > /dev/null 2>&1; then
-          echo "Failed to start server"
-          exit 1
-        fi
 
   dev:env:
     desc: Run the server (watch) with local .env
