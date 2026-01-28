@@ -24,13 +24,15 @@ export function renderDashboardPage(opts) {
     .stats { display: flex; gap: 20px; margin-top: 15px; flex-wrap: wrap; }
     .stat { background: #1e293b; padding: 12px 20px; border-radius: 8px; font-size: 14px; }
     .stat-value { font-size: 24px; font-weight: bold; margin-right: 8px; }
-    .sessions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
-    .session-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 2px solid transparent; transition: all 0.2s; min-height: 240px; display: flex; flex-direction: column; }
+    .sessions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 20px; }
+    .session-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 2px solid transparent; transition: all 0.2s; min-height: 280px; display: flex; flex-direction: column; position: relative; }
     .session-card:hover { border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 10px 25px rgba(59, 130, 246, 0.1); cursor: pointer; }
     .session-card.busy { border-left: 4px solid #3b82f6; }
     .session-card.idle { border-left: 4px solid #10b981; }
     .session-card.stale { border-left: 4px solid #6b7280; opacity: 0.7; }
-    .session-description { font-size: 13px; color: #cbd5e1; margin-bottom: 14px; line-height: 1.6; max-height: 4.8em; overflow: hidden; }
+    .session-card.subagent-nested { margin-left: 40px; margin-top: -10px; border-left: 3px solid #3730a3; opacity: 0.9; min-height: 200px; }
+    .session-card.subagent-nested::before { content: '↳'; position: absolute; left: -30px; color: #64748b; font-size: 20px; top: 20px; }
+    .session-description { font-size: 13px; color: #cbd5e1; margin-bottom: 14px; line-height: 1.6; max-height: 7.2em; overflow: hidden; }
     .session-current-task { font-size: 13px; color: #60a5fa; margin-bottom: 14px; padding: 8px 12px; background: rgba(59, 130, 246, 0.1); border-radius: 6px; border-left: 3px solid #3b82f6; display: flex; align-items: center; gap: 8px; }
     .session-current-task::before { content: '⚡'; font-size: 14px; }
     .session-badges { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -51,6 +53,12 @@ export function renderDashboardPage(opts) {
     .status-badge.stale { background: #374151; color: #9ca3af; }
     .session-project { font-size: 14px; color: #94a3b8; margin-bottom: 8px; }
     .session-directory { font-size: 12px; color: #64748b; font-family: 'Monaco', 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 15px; }
+    .filter-bar { background: #1e293b; padding: 20px; border-radius: 12px; margin-bottom: 30px; display: flex; flex-direction: column; gap: 15px; }
+    .filter-section { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .filter-section label { font-weight: 600; color: #94a3b8; font-size: 14px; min-width: 70px; }
+    .filter-btn { padding: 8px 16px; border: 2px solid #334155; background: transparent; color: #cbd5e1; border-radius: 8px; cursor: pointer; font-size: 13px; transition: all 0.2s; font-family: inherit; }
+    .filter-btn:hover { border-color: #3b82f6; color: #f1f5f9; }
+    .filter-btn.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
     .loading { text-align: center; padding: 60px; font-size: 18px; color: #64748b; }
     .empty { text-align: center; padding: 60px; color: #64748b; }
     .refresh-indicator { position: fixed; top: 20px; right: 20px; background: #1e293b; padding: 10px 20px; border-radius: 8px; font-size: 14px; display: none; }
@@ -70,6 +78,30 @@ export function renderDashboardPage(opts) {
       </div>
     </header>
 
+    <div class="filter-bar">
+      <div class="filter-section">
+        <label>Project:</label>
+        <div id="project-filters">
+          <button class="filter-btn active" data-filter="project" data-value="all">All Projects</button>
+        </div>
+      </div>
+      <div class="filter-section">
+        <label>Status:</label>
+        <button class="filter-btn active" data-filter="status" data-value="all">All</button>
+        <button class="filter-btn" data-filter="status" data-value="busy">Busy</button>
+        <button class="filter-btn" data-filter="status" data-value="idle">Idle</button>
+        <button class="filter-btn" data-filter="status" data-value="stale">Stale</button>
+      </div>
+      <div class="filter-section">
+        <label>Phase:</label>
+        <button class="filter-btn active" data-filter="phase" data-value="all">All</button>
+        <button class="filter-btn" data-filter="phase" data-value="research">Research</button>
+        <button class="filter-btn" data-filter="phase" data-value="planning">Planning</button>
+        <button class="filter-btn" data-filter="phase" data-value="implementing">Implementing</button>
+        <button class="filter-btn" data-filter="phase" data-value="done">Done</button>
+      </div>
+    </div>
+
     <div class="refresh-indicator" id="refresh-indicator">Updating...</div>
     <div id="sessions-container"><div class="loading">Loading sessions...</div></div>
   </div>
@@ -77,6 +109,14 @@ export function renderDashboardPage(opts) {
   <script>
     const OPENCODE_WEB_URL = ${JSON.stringify(opencodeWebUrl)};
     const REFRESH_INTERVAL_MS = ${JSON.stringify(refreshIntervalMs)};
+    
+    let activeFilters = {
+      project: 'all',
+      status: 'all',
+      phase: 'all'
+    };
+    
+    let allSessions = [];
 
     function formatTime(minutes) {
       if (minutes < 1) return 'Just now';
@@ -84,51 +124,167 @@ export function renderDashboardPage(opts) {
       const hours = Math.floor(minutes / 60);
       return hours + 'h ago';
     }
+    
+    function groupSessionsByHierarchy(sessions) {
+      const parentSessions = sessions.filter(s => !s.isSubagent)
+      const subagents = sessions.filter(s => s.isSubagent)
+      
+      const grouped = []
+      for (const parent of parentSessions) {
+        const children = subagents.filter(s => s.parentID === parent.id)
+        grouped.push({ session: parent, children })
+      }
+      
+      return grouped
+    }
+    
+    function applyFilters(sessions) {
+      return sessions.filter(s => {
+        if (activeFilters.project !== 'all' && s.projectName !== activeFilters.project) return false
+        if (activeFilters.status !== 'all' && s.status !== activeFilters.status) return false
+        if (activeFilters.phase !== 'all' && s.phase !== activeFilters.phase) return false
+        return true
+      })
+    }
+    
+    function updateProjectFilters(sessions) {
+      const projects = [...new Set(sessions.map(s => s.projectName))].sort()
+      const container = document.getElementById('project-filters')
+      
+      const html = '<button class="filter-btn ' + (activeFilters.project === 'all' ? 'active' : '') + '" data-filter="project" data-value="all">All Projects</button>' +
+        projects.map(p => 
+          '<button class="filter-btn ' + (activeFilters.project === p ? 'active' : '') + '" data-filter="project" data-value="' + p + '">' + p + '</button>'
+        ).join('')
+      
+      container.innerHTML = html
+      
+      // Add click handlers
+      container.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', handleFilterClick)
+      })
+    }
+    
+    function handleFilterClick(e) {
+      const filter = e.target.dataset.filter
+      const value = e.target.dataset.value
+      
+      // Update active filters
+      activeFilters[filter] = value
+      
+      // Update UI
+      document.querySelectorAll(\`.filter-btn[data-filter="\${filter}"]\`).forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === value)
+      })
+      
+      // Save to localStorage
+      localStorage.setItem('opencode-filters', JSON.stringify(activeFilters))
+      
+      // Re-render with filters
+      renderSessions(allSessions)
+    }
+    
+    function loadFilters() {
+      const saved = localStorage.getItem('opencode-filters')
+      if (saved) {
+        try {
+          activeFilters = JSON.parse(saved)
+        } catch (e) {
+          // Ignore invalid JSON
+        }
+      }
+    }
 
     function renderSessions(sessions) {
       const container = document.getElementById('sessions-container');
+
+      // Store all sessions
+      allSessions = sessions
 
       if (!sessions || sessions.length === 0) {
         container.innerHTML = '<div class="empty">No recent OpenCode sessions found</div>';
         return;
       }
+      
+      // Update project filters
+      updateProjectFilters(sessions)
 
-      document.getElementById('total-count').textContent = sessions.length;
-      document.getElementById('busy-count').textContent = sessions.filter(s => s.status === 'busy').length;
-      document.getElementById('idle-count').textContent = sessions.filter(s => s.status === 'idle').length;
-      document.getElementById('implementing-count').textContent = sessions.filter(s => s.phase === 'implementing').length;
-      document.getElementById('research-count').textContent = sessions.filter(s => s.phase === 'research').length;
+      // Apply filters
+      const filtered = applyFilters(sessions)
 
-      const html = '<div class="sessions-grid">' + sessions.map(session => \`
-        <div class="session-card \${session.status}" onclick="openSession('\${session.id}')">
+      // Update stats with filtered counts
+      document.getElementById('total-count').textContent = filtered.length;
+      document.getElementById('busy-count').textContent = filtered.filter(s => s.status === 'busy').length;
+      document.getElementById('idle-count').textContent = filtered.filter(s => s.status === 'idle').length;
+      document.getElementById('implementing-count').textContent = filtered.filter(s => s.phase === 'implementing').length;
+      document.getElementById('research-count').textContent = filtered.filter(s => s.phase === 'research').length;
+
+      // Group by hierarchy
+      const grouped = groupSessionsByHierarchy(filtered)
+
+      const html = '<div class="sessions-grid">' + grouped.map(group => \`
+        <!-- Parent session -->
+        <div class="session-card \${group.session.status}" onclick="openSession('\${group.session.id}')">
           <div class="session-header">
-            <div class="session-name">\${session.title || session.slug}</div>
-            <div class="status-badge \${session.status}">\${session.status}</div>
+            <div class="session-name">\${group.session.title || group.session.slug}</div>
+            <div class="status-badge \${group.session.status}">\${group.session.status}</div>
           </div>
 
-          \${session.description ? \`<div class="session-description">\${session.description}</div>\` : ''}
+          \${group.session.description ? \`<div class="session-description">\${group.session.description}</div>\` : ''}
           
-          \${session.currentTask ? \`<div class="session-current-task">\${session.currentTask}</div>\` : ''}
+          \${group.session.currentTask ? \`<div class="session-current-task">\${group.session.currentTask}</div>\` : ''}
 
           <div class="session-badges">
-            <div class="badge phase-\${session.phase}">\${session.phase}</div>
-            <div class="badge agent">@\${session.agent}</div>
-            \${session.isSubagent ? '<div class="badge subagent">subagent</div>' : ''}
+            <div class="badge phase-\${group.session.phase}">\${group.session.phase}</div>
+            <div class="badge agent">@\${group.session.agent}</div>
+            \${group.children.length > 0 ? \`<div class="badge subagent">\${group.children.length} subagent\${group.children.length > 1 ? 's' : ''}</div>\` : ''}
           </div>
 
-          <div class="session-project">Project: \${session.projectName}</div>
-          <div class="session-directory">\${session.directory || ''}</div>
+          <div class="session-project">Project: \${group.session.projectName}</div>
+          <div class="session-directory">\${group.session.directory || ''}</div>
 
           <div class="session-stats">
-            <div class="stat-item">Updated: \${formatTime(session.ageMinutes)}</div>
-            \${session.summary ? \`<div class="stat-item">Files: \${session.summary.files}</div>\` : ''}
-            \${session.summary ? \`<div class="stat-item">+\${session.summary.additions}</div>\` : ''}
-            \${session.summary ? \`<div class="stat-item">-\${session.summary.deletions}</div>\` : ''}
+            <div class="stat-item">Updated: \${formatTime(group.session.ageMinutes)}</div>
+            \${group.session.summary ? \`<div class="stat-item">Files: \${group.session.summary.files}</div>\` : ''}
+            \${group.session.summary ? \`<div class="stat-item">+\${group.session.summary.additions}</div>\` : ''}
+            \${group.session.summary ? \`<div class="stat-item">-\${group.session.summary.deletions}</div>\` : ''}
           </div>
         </div>
+        
+        <!-- Subagent sessions (nested) -->
+        \${group.children.map(child => \`
+          <div class="session-card subagent-nested \${child.status}" onclick="openSession('\${child.id}')">
+            <div class="session-header">
+              <div class="session-name">\${child.title || child.slug}</div>
+              <div class="status-badge \${child.status}">\${child.status}</div>
+            </div>
+
+            \${child.description ? \`<div class="session-description">\${child.description}</div>\` : ''}
+            
+            \${child.currentTask ? \`<div class="session-current-task">\${child.currentTask}</div>\` : ''}
+
+            <div class="session-badges">
+              <div class="badge phase-\${child.phase}">\${child.phase}</div>
+              <div class="badge agent">@\${child.agent}</div>
+              <div class="badge subagent">subagent</div>
+            </div>
+
+            <div class="session-stats">
+              <div class="stat-item">Updated: \${formatTime(child.ageMinutes)}</div>
+              \${child.summary ? \`<div class="stat-item">Files: \${child.summary.files}</div>\` : ''}
+              \${child.summary ? \`<div class="stat-item">+\${child.summary.additions}</div>\` : ''}
+              \${child.summary ? \`<div class="stat-item">-\${child.summary.deletions}</div>\` : ''}
+            </div>
+          </div>
+        \`).join('')}
       \`).join('') + '</div>';
 
       container.innerHTML = html;
+      
+      // Setup filter click handlers
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        if (!btn.dataset.filter) return
+        btn.addEventListener('click', handleFilterClick)
+      })
     }
 
     async function openSession(sessionId) {
@@ -165,6 +321,23 @@ export function renderDashboardPage(opts) {
 
       setTimeout(() => indicator.classList.remove('active'), 500);
     }
+    
+    // Load saved filters and add event listeners for status/phase filters
+    loadFilters();
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.filter-btn[data-filter="status"], .filter-btn[data-filter="phase"]').forEach(btn => {
+        btn.addEventListener('click', handleFilterClick)
+        // Apply saved filter state
+        const filter = btn.dataset.filter
+        const value = btn.dataset.value
+        if (activeFilters[filter] === value) {
+          btn.classList.add('active')
+        } else {
+          btn.classList.remove('active')
+        }
+      })
+    })
 
     fetchSessions();
     setInterval(fetchSessions, REFRESH_INTERVAL_MS);
