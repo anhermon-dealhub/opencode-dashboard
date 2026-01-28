@@ -47,9 +47,9 @@ export function renderDashboardPage(opts) {
     .badge.phase-done { background: #374151; color: #9ca3af; }
     .badge.agent { background: #581c87; color: #e9d5ff; }
     .badge.subagent { background: #3730a3; color: #c7d2fe; font-size: 10px; }
-    .badge.collapsible { cursor: pointer; user-select: none; transition: all 0.2s; }
-    .badge.collapsible:hover { background: #4338ca; }
-    .badge.collapsible .toggle-icon { display: inline-block; transition: transform 0.2s; font-size: 10px; }
+    .badge.collapsible { cursor: pointer; user-select: none; transition: all 0.2s; padding: 5px 12px; font-size: 11px; font-weight: 700; border: 1px solid rgba(255, 255, 255, 0.2); }
+    .badge.collapsible:hover { background: #4338ca; border-color: rgba(255, 255, 255, 0.4); box-shadow: 0 0 8px rgba(67, 56, 202, 0.4); }
+    .badge.collapsible .toggle-icon { display: inline-block; transition: transform 0.2s; font-size: 12px; font-weight: bold; margin-right: 4px; }
     .badge.collapsible.expanded .toggle-icon { transform: rotate(90deg); }
     .session-stats { display: flex; gap: 12px; font-size: 12px; color: #94a3b8; padding-top: 12px; border-top: 1px solid #334155; }
     .stat-item { display: flex; align-items: center; gap: 4px; }
