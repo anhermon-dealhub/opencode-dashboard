@@ -100,11 +100,11 @@ export function renderDashboardPage(opts) {
       const html = '<div class="sessions-grid">' + sessions.map(session => \`
         <div class="session-card \${session.status}" onclick="openSession('\${session.id}')">
           <div class="session-header">
-            <div class="session-name">\${session.slug}</div>
+            <div class="session-name">\${session.title || session.slug}</div>
             <div class="status-badge \${session.status}">\${session.status}</div>
           </div>
 
-          <div class="session-description">\${session.description || session.title || 'No description'}</div>
+          <div class="session-description">\${session.description || session.slug}</div>
 
           <div class="session-badges">
             <div class="badge phase-\${session.phase}">\${session.phase}</div>

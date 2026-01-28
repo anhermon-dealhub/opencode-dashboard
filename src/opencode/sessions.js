@@ -99,6 +99,11 @@ export async function discoverSessions(storageRoot, thresholds) {
         
         // Enrich with semantic title for all sessions
         enrichedSession = await enrichSessionTitle(enrichedSession, storageRoot, enrichmentCache)
+        
+        // Update description with enriched title (unless it's a subagent with cleaned description)
+        if (!isSubagent) {
+          enrichedSession.description = enrichedSession.title
+        }
 
         sessions.push(enrichedSession)
       } catch {
